@@ -1,0 +1,223 @@
+EggnogMapperServiceEggnogMapper:
+  image: phantomas1234/eggnog-mapper
+  links: []
+  ports:
+  - 51500:51600
+  volumes:
+  - ~/Dev/eggnog-mapper/data:/data
+EggnogMapperServiceEggnogMapperService:
+  build: .
+  links:
+  - EggnogMapperServiceEggnogMapper
+  ports:
+  - 8080:8080
+  volumes:
+  - ~/Dev/eggnog-mapper/data:/data
+GeneToReactionsRedis:
+  image: redis
+  links: []
+  ports:
+  - 6379:6379
+GeneToReactionsWeb:
+  build: .
+  dockerfile: Dockerfile
+  environment:
+  - PYTHONUNBUFFERED=1
+  - SETTINGS_OBJECT=genotype_to_model.settings.Default
+  - GENOMICS_API
+  links:
+  - GeneToReactionsRedis
+  - IceWeb
+  ports:
+  - 8000:8000
+  - 50053:50053
+GslcDockerGslc:
+  build: .
+  links: []
+IceWeb:
+  build: .
+  dockerfile: Dockerfile
+  links: []
+  ports:
+  - 8080:8080
+  - 8443:8443
+IdMapperDb:
+  environment:
+  - NEO4J_AUTH=neo4j/1
+  image: neo4j:3.1
+  links: []
+  ports:
+  - 7474:7474
+  - 7687:7687
+IdMapperWeb:
+  build:
+    context: .
+  environment:
+  - ID_MAPPER_API=${ID_MAPPER_API}
+  - ID_MAPPER_PORT=${ID_MAPPER_PORT}
+  - ID_MAPPER_PASSWORD=${ID_MAPPER_PASSWORD}
+  - ID_MAPPER_USER=${ID_MAPPER_USER}
+  - PYTHONUNBUFFERED=1
+  - PYTHONASYNCIODEBUG=1
+  links:
+  - IdMapperDb
+  - IdMapperWeb
+  ports:
+  - 80:7000
+IloopToModelWeb:
+  build:
+    context: .
+    dockerfile: Dockerfile
+  command:
+  - -w
+  - '1'
+  - -b
+  - 0.0.0.0:7000
+  - -t
+  - '150'
+  - -k
+  - aiohttp.worker.GunicornWebWorker
+  - iloop_to_model.app:app
+  environment:
+  - PYTHONUNBUFFERED=1
+  - PYTHONASYNCIODEBUG=1
+  - ILOOP_TOKEN
+  - ILOOP_API=${ILOOP_API:-http://iloop-backend:80/api}
+  - MODEL_API=${MODEL_API:-http://model-backend:8000}
+  links:
+  - ModelWeb
+  networks:
+    iloop:
+      aliases:
+      - iloop-to-model-backend
+  ports:
+  - ${ILOOP_TO_MODEL_PORT:-7000}:7000
+LoghouseElasticsearch:
+  build: elasticsearch/
+  environment:
+    ES_JAVA_OPTS: -Xms1g -Xmx1g
+  links: []
+  ports:
+  - 9200:9200
+  - 9300:9300
+LoghouseKibana:
+  build: kibana/
+  environment:
+  - LOGSPOUT=ignore
+  links: []
+  ports:
+  - 5601:5601
+LoghouseLogspout:
+  command: syslog://app.dd-decaf.eu:6666
+  image: gliderlabs/logspout:master
+  links: []
+  ports:
+  - 8100:8000
+  volumes:
+  - /var/run/docker.sock:/tmp/docker.sock
+LoghouseLogstash:
+  build: logstash/
+  command: -f /etc/logstash/conf.d/
+  environment:
+  - ELASTIC_PASSWORD
+  links: []
+  ports:
+  - 5000:5000
+MetabolicNinjaMongo:
+  image: mongo
+  links: []
+  ports:
+  - 27017:27017
+MetabolicNinjaServer:
+  build: .
+  dockerfile: Dockerfile-server-development
+  links:
+  - MetabolicNinjaMongo
+  ports:
+  - 9000:8080
+  volumes:
+  - ./:/metabolic-ninja
+MetabolicNinjaWorker:
+  build: .
+  dockerfile: Dockerfile-worker
+  links:
+  - MetabolicNinjaServer
+  - MetabolicNinjaMongo
+ModelRedis:
+  image: redis
+  links: []
+  networks:
+  - default
+  ports:
+  - ${REDIS_PORT:-6379}
+ModelWeb:
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+  - PYTHONUNBUFFERED=1
+  - PYTHONASYNCIODEBUG=1
+  - ANNOTATIONS_API=${ANNOTATIONS_API:-https://api-staging.dd-decaf.eu/annotation/genes}
+  - ID_MAPPER_API=${ID_MAPPER_API:-https://api.dd-decaf.eu/idmapping/query}
+  - REDIS_ADDR=${REDIS_ADDR:-redis}
+  - REDIS_PORT=${REDIS_PORT:-6379}
+  links:
+  - ModelRedis
+  - GeneToReactionsWeb
+  - IdMapperWeb
+  networks:
+    default: null
+    iloop:
+      aliases:
+      - model-backend
+  ports:
+  - ${MODEL_PORT:-8000}:8000
+  volumes:
+  - ./:/io
+PostgresBackupDb:
+  image: postgres:9.6-alpine
+  links: []
+PostgresBackupPgbkp:
+  build:
+    context: .
+  environment:
+  - BACKUP_DIR=${BACKUP_DIR:-/data}
+  - PGHOST=${PGHOST:-db}
+  - PGDATABASE=${PGDATABASE:-postgres}
+  - PGUSER=${PGUSER:-postgres}
+  - PGPORT=${PGPORT:-5432}
+  image: postgres-bkp
+  links:
+  - PostgresBackupDb
+  volumes:
+  - ./data:${BACKUP_DIR:-/data}
+SchemaCollectorWeb:
+  build: .
+  dockerfile: Dockerfile
+  environment:
+  - PYTHONUNBUFFERED=1
+  - PYTHONASYNCIODEBUG=1
+  - TO_COLLECT=http://10.16.70.162
+  - HOST=api.dd-decaf.eu
+  - BASE_URL=/
+  links: []
+  ports:
+  - 7500:7500
+UploadWeb:
+  build:
+    context: .
+    dockerfile: Dockerfile
+  environment:
+  - PYTHONUNBUFFERED=1
+  - PYTHONASYNCIODEBUG=1
+  - ILOOP_TOKEN
+  - ILOOP_API=${ILOOP_API:-http://iloop-backend:80/api}
+  links: []
+  networks:
+    iloop:
+      aliases:
+      - upload-backend
+  ports:
+  - ${UPLOAD_PORT:-7000}:7000
+  volumes:
+  - ./:/source
